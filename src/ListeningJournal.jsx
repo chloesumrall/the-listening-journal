@@ -1,5 +1,9 @@
 import React from 'react';
 import { ARTISTS } from './data';
+import {
+  hasBackend, getSessionUser, onAuth, signUpEmail, signInEmail, signOutUser,
+  getProfile, createProfile, loadEntries, saveEntryRow, importLocal,
+} from './db';
 
 /*
  * The Listening Journal — reflect on songs across your favorite artists,
@@ -49,7 +53,13 @@ function css(str) {
 }
 
 export default class ListeningJournal extends React.Component {
-  state = { view: 'artists', activeArtist: null, activeAlbum: null, activeSong: null, colorFilter: null, entries: {} };
+  state = {
+    view: 'artists', activeArtist: null, activeAlbum: null, activeSong: null, colorFilter: null, entries: {},
+    user: null, profile: null, authReady: !hasBackend,
+    authView: null, authMode: 'login', accountMenu: false,
+    fEmail: '', fPassword: '', fHandle: '', fDisplay: '', authMsg: '', authBusy: false,
+  };
+  saveTimers = {};
 
   componentDidMount() {
     try {
@@ -63,12 +73,43 @@ export default class ListeningJournal extends React.Component {
           if (k.includes(':')) { migrated[k] = parsed[k]; }
           else { migrated['taylor:' + k] = parsed[k]; changed = true; }
         });
-        this.setState({ entries: migrated }, changed ? this.persist : undefined);
+        this.setState({ entries: migrated }, changed ? this.persistLocal : undefined);
       }
     } catch (e) {}
+
+    if (hasBackend) {
+      getSessionUser().then((u) => this.handleUser(u)).catch(() => this.setState({ authReady: true }));
+      this.unsub = onAuth((u) => this.handleUser(u));
+    }
   }
-  persist = () => { try { localStorage.setItem(KEY, JSON.stringify(this.state.entries)); } catch (e) {} };
-  blank() { return { mood: '', songType: '', where: '', favLine: '', bridgeLine: '', relates: '', colors: [], overall: 0, replay: 0, bridgePower: 0 }; }
+  componentWillUnmount() { if (this.unsub) this.unsub(); }
+
+  // React to sign-in / sign-out: load the right profile + entries.
+  handleUser = async (u) => {
+    this.setState({ user: u || null });
+    if (!u) { this.setState({ profile: null, authReady: true }); return; }
+    try {
+      const prof = await getProfile(u.id);
+      if (!prof) { this.setState({ profile: null, authView: 'profile-setup', authReady: true }); return; }
+      const cloud = await loadEntries(u.id);
+      this.setState({ profile: prof, authView: null, entries: cloud, authReady: true });
+    } catch (e) { this.setState({ authReady: true }); }
+  };
+
+  persistLocal = () => { try { localStorage.setItem(KEY, JSON.stringify(this.state.entries)); } catch (e) {} };
+  // Save one song's entry. Signed in -> cloud only (debounced), so a user's
+  // reflections aren't left behind in a shared browser. Signed out -> localStorage.
+  saveEntry = (id) => {
+    if (this.state.user) {
+      clearTimeout(this.saveTimers[id]);
+      this.saveTimers[id] = setTimeout(() => saveEntryRow(this.state.user.id, id, this.entry(id)), 600);
+    } else {
+      this.persistLocal();
+    }
+  };
+  migrateKeys(obj) { const out = {}; Object.keys(obj || {}).forEach((k) => { out[k.includes(':') ? k : ('taylor:' + k)] = obj[k]; }); return out; }
+  readLocal() { try { const raw = localStorage.getItem(KEY); return raw ? this.migrateKeys(JSON.parse(raw) || {}) : {}; } catch (e) { return {}; } }
+  blank() { return { mood: '', songType: '', where: '', favLine: '', bridgeLine: '', relates: '', colors: [], overall: 0, replay: 0, bridgePower: 0, visibility: 'private' }; }
   entry(id) { return { ...this.blank(), ...(this.state.entries[id] || {}) }; }
   touched(e) { return !!(e.overall || e.replay || e.bridgePower || e.mood || e.songType || e.where || e.favLine || e.bridgeLine || e.relates || (e.colors && e.colors.length)); }
 
@@ -78,7 +119,7 @@ export default class ListeningJournal extends React.Component {
       const cur = { ...this.blank(), ...(s.entries[id] || {}) };
       cur[key] = val;
       return { entries: { ...s.entries, [id]: cur } };
-    }, this.persist);
+    }, () => this.saveEntry(id));
   }
   toggleColor(name) {
     const cur = this.entry(this.state.activeSong);
@@ -109,7 +150,7 @@ export default class ListeningJournal extends React.Component {
       reader.onload = () => {
         try {
           const parsed = JSON.parse(reader.result);
-          if (parsed && typeof parsed === 'object') this.setState({ entries: { ...this.state.entries, ...parsed } }, this.persist);
+          if (parsed && typeof parsed === 'object') this.setState({ entries: { ...this.state.entries, ...parsed } }, () => { this.persistLocal(); if (this.state.user) importLocal(this.state.user.id, this.state.entries); });
         } catch (e) { try { window.alert('That file could not be read as a journal backup.'); } catch (e2) {} }
       };
       reader.readAsText(file);
@@ -126,6 +167,55 @@ export default class ListeningJournal extends React.Component {
   parseSong(id) { const ci = id.indexOf(':'); const rest = id.slice(ci + 1); const di = rest.lastIndexOf('-'); return { artistId: id.slice(0, ci), albumId: rest.slice(0, di) }; }
   openSong = (id) => { const p = this.parseSong(id); this.setState({ view: 'song', activeSong: id, activeArtist: p.artistId, activeAlbum: p.albumId }); };
   pickColorFilter = (name) => this.setState((s) => ({ colorFilter: s.colorFilter === name ? null : name }));
+
+  // ---- account actions ----
+  openAuth = (mode) => this.setState({ authView: 'auth', authMode: mode, authMsg: '', fEmail: '', fPassword: '', accountMenu: false });
+  closeAuth = () => this.setState({ authView: null, authMsg: '' });
+  setForm = (key) => (ev) => this.setState({ [key]: ev.target.value });
+  toggleAccountMenu = () => this.setState((s) => ({ accountMenu: !s.accountMenu }));
+
+  doAuth = async () => {
+    const { authMode, fEmail, fPassword } = this.state;
+    if (!fEmail || !fPassword) { this.setState({ authMsg: 'Enter your email and password.' }); return; }
+    this.setState({ authBusy: true, authMsg: '' });
+    if (authMode === 'signup') {
+      const r = await signUpEmail(fEmail.trim(), fPassword);
+      this.setState({ authBusy: false });
+      if (r.error) { this.setState({ authMsg: r.error }); return; }
+      if (r.needsConfirm) { this.setState({ authMode: 'login', fPassword: '', authMsg: 'Check your email to confirm your account, then log in.' }); return; }
+      this.setState({ authView: null });
+    } else {
+      const r = await signInEmail(fEmail.trim(), fPassword);
+      this.setState({ authBusy: false });
+      if (r.error) { this.setState({ authMsg: r.error }); return; }
+      this.setState({ authView: null, fPassword: '' });
+    }
+  };
+
+  doProfileSetup = async () => {
+    const { user, fHandle, fDisplay } = this.state;
+    if (!user) return;
+    this.setState({ authBusy: true, authMsg: '' });
+    const r = await createProfile(user.id, fHandle, fDisplay);
+    this.setState({ authBusy: false });
+    if (r.error) { this.setState({ authMsg: r.error }); return; }
+    const cloud = await loadEntries(user.id);
+    this.setState({ profile: r.profile, authView: null, entries: cloud, fHandle: '', fDisplay: '' });
+  };
+
+  doSignOut = async () => {
+    await signOutUser();
+    this.setState({ user: null, profile: null, accountMenu: false, authView: null, entries: this.readLocal() });
+  };
+
+  doImportLocal = async () => {
+    if (!this.state.user) return;
+    const local = this.readLocal();
+    const n = await importLocal(this.state.user.id, local);
+    const cloud = await loadEntries(this.state.user.id);
+    this.setState({ entries: cloud, accountMenu: false });
+    try { window.alert(n ? ('Imported ' + n + ' local entries into your account.') : 'No local entries found to import.'); } catch (e) {}
+  };
 
   hexOf(name) { const p = PALETTE.find((x) => x.name === name); return p ? p.hex : '#ccc'; }
   starStr(n) { return '★'.repeat(n) + '☆'.repeat(5 - n); }
@@ -232,6 +322,10 @@ export default class ListeningJournal extends React.Component {
       vals.onFav = (ev) => this.setField('favLine', ev.target.value);
       vals.onBridge = (ev) => this.setField('bridgeLine', ev.target.value);
       vals.onRelates = (ev) => this.setField('relates', ev.target.value);
+      vals.setVis = (val) => this.setField('visibility', val);
+      const visPill = (on) => 'font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:7px 14px; border-radius:16px; border:1.5px solid ' + (on ? '#a23a63; background:#a23a63; color:#fff;' : '#e6c2d2; background:transparent; color:#a23a63;');
+      vals.visPrivateStyle = visPill(e.visibility !== 'friends');
+      vals.visFriendsStyle = visPill(e.visibility === 'friends');
 
       vals.editorPalette = PALETTE.map((p) => {
         const on = e.colors.includes(p.name);
@@ -329,6 +423,19 @@ export default class ListeningJournal extends React.Component {
             <span style={css('width:1px; height:22px; background:#f0d7e1; margin:0 4px;')}></span>
             <button onClick={vals.exportJournal} title="Download a backup of your journal" style={css(vals.iconBtnStyle)}>⇩ Back up</button>
             <button onClick={vals.importJournal} title="Restore a journal backup file" style={css(vals.iconBtnStyle)}>⇧ Restore</button>
+            {hasBackend && (this.state.user && this.state.profile ? (
+              <div style={{ position: 'relative' }}>
+                <button onClick={this.toggleAccountMenu} style={css('font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:8px 14px; border-radius:20px; border:1.5px solid #a23a63; background:#a23a63; color:#fff;')}>@{this.state.profile.handle}</button>
+                {this.state.accountMenu && (
+                  <div style={css('position:absolute; right:0; top:42px; background:#fffdfb; border:1.5px solid #f0d7e1; border-radius:12px; padding:6px; min-width:190px; box-shadow:0 6px 20px rgba(122,41,71,0.14); z-index:30;')}>
+                    <button onClick={this.doImportLocal} style={css('display:block; width:100%; text-align:left; background:none; border:none; cursor:pointer; font-family:Quicksand,sans-serif; font-size:13px; color:#5b3a49; padding:9px 12px; border-radius:8px;')}>Import local entries</button>
+                    <button onClick={this.doSignOut} style={css('display:block; width:100%; text-align:left; background:none; border:none; cursor:pointer; font-family:Quicksand,sans-serif; font-size:13px; color:#a23a63; padding:9px 12px; border-radius:8px;')}>Log out</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button onClick={() => this.openAuth('login')} style={css('font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:8px 16px; border-radius:20px; border:1.5px solid #a23a63; background:#a23a63; color:#fff;')}>Log in</button>
+            ))}
           </div>
         </div>
 
@@ -419,6 +526,14 @@ export default class ListeningJournal extends React.Component {
                 <span style={css('opacity:0.7;')}>{vals.e.trackLabel}</span>
               </div>
               <h1 style={css("margin:6px 0 0; font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:44px; color:#3a2530; line-height:1.05;")}>{vals.e.title}</h1>
+            </div>
+            <div style={css('display:flex; align-items:center; gap:10px; margin-bottom:22px; flex-wrap:wrap;')}>
+              <span style={css('font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#a23a63;')}>Visibility</span>
+              <div style={css('display:flex; gap:6px;')}>
+                <button onClick={() => vals.setVis('private')} style={css(vals.visPrivateStyle)}>Private</button>
+                <button onClick={() => vals.setVis('friends')} style={css(vals.visFriendsStyle)}>Shared with friends</button>
+              </div>
+              {!this.state.user && <span style={css('font-size:11px; color:#b58ea0;')}>Log in to actually share these</span>}
             </div>
             <div style={css('display:grid; grid-template-columns:1fr 1fr; gap:20px 28px; margin-bottom:22px;')}>
               <div style={css(vals.fieldBoxStyle)}>
@@ -565,6 +680,36 @@ export default class ListeningJournal extends React.Component {
                 </div>
               )}
               {vals.noBridge && (<div style={css(vals.emptyStyle)}>Rate a few bridges to crown the best ones.</div>)}
+            </div>
+          </div>
+        )}
+
+        {this.state.authView === 'auth' && (
+          <div onClick={this.closeAuth} style={css('position:fixed; inset:0; background:rgba(58,37,48,0.4); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;')}>
+            <div onClick={(ev) => ev.stopPropagation()} style={css('background:#fffdfb; border-radius:18px; border:1.5px solid #f0d7e1; padding:28px 26px; width:100%; max-width:380px;')}>
+              <div style={css("font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:26px; color:#6b2440; margin-bottom:4px;")}>{this.state.authMode === 'signup' ? 'Create your account' : 'Welcome back'}</div>
+              <div style={css('font-size:13px; color:#9a6a7c; margin-bottom:18px;')}>{this.state.authMode === 'signup' ? 'Save your journal and share with friends.' : 'Log in to your listening journal.'}</div>
+              <input value={this.state.fEmail} onChange={this.setForm('fEmail')} type="email" placeholder="email" style={css('width:100%; border:1.5px solid #e6c2d2; border-radius:10px; background:#fff; font-size:15px; color:#3a2530; padding:10px 12px; margin-bottom:10px;')} />
+              <input value={this.state.fPassword} onChange={this.setForm('fPassword')} type="password" placeholder="password" style={css('width:100%; border:1.5px solid #e6c2d2; border-radius:10px; background:#fff; font-size:15px; color:#3a2530; padding:10px 12px; margin-bottom:14px;')} />
+              {this.state.authMsg && <div style={css('font-size:12px; color:#a23a63; margin-bottom:12px;')}>{this.state.authMsg}</div>}
+              <button onClick={this.doAuth} style={css('width:100%; font-family:Quicksand,sans-serif; font-size:14px; font-weight:700; cursor:pointer; padding:11px; border-radius:12px; border:none; background:#a23a63; color:#fff; margin-bottom:12px;')}>{this.state.authBusy ? '…' : (this.state.authMode === 'signup' ? 'Sign up' : 'Log in')}</button>
+              <div style={css('text-align:center; font-size:12px; color:#9a6a7c;')}>
+                {this.state.authMode === 'signup' ? 'Already have an account? ' : 'New here? '}
+                <span onClick={() => this.setState({ authMode: this.state.authMode === 'signup' ? 'login' : 'signup', authMsg: '' })} style={css('color:#a23a63; font-weight:700; cursor:pointer;')}>{this.state.authMode === 'signup' ? 'Log in' : 'Create one'}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {this.state.authView === 'profile-setup' && (
+          <div style={css('position:fixed; inset:0; background:rgba(58,37,48,0.4); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;')}>
+            <div style={css('background:#fffdfb; border-radius:18px; border:1.5px solid #f0d7e1; padding:28px 26px; width:100%; max-width:380px;')}>
+              <div style={css("font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:26px; color:#6b2440; margin-bottom:4px;")}>Pick a username</div>
+              <div style={css('font-size:13px; color:#9a6a7c; margin-bottom:18px;')}>This is how friends will find you. Letters, numbers, and underscores.</div>
+              <input value={this.state.fHandle} onChange={this.setForm('fHandle')} placeholder="username" style={css('width:100%; border:1.5px solid #e6c2d2; border-radius:10px; background:#fff; font-size:15px; color:#3a2530; padding:10px 12px; margin-bottom:10px;')} />
+              <input value={this.state.fDisplay} onChange={this.setForm('fDisplay')} placeholder="display name (optional)" style={css('width:100%; border:1.5px solid #e6c2d2; border-radius:10px; background:#fff; font-size:15px; color:#3a2530; padding:10px 12px; margin-bottom:14px;')} />
+              {this.state.authMsg && <div style={css('font-size:12px; color:#a23a63; margin-bottom:12px;')}>{this.state.authMsg}</div>}
+              <button onClick={this.doProfileSetup} style={css('width:100%; font-family:Quicksand,sans-serif; font-size:14px; font-weight:700; cursor:pointer; padding:11px; border-radius:12px; border:none; background:#a23a63; color:#fff;')}>{this.state.authBusy ? '…' : 'Save and continue'}</button>
             </div>
           </div>
         )}
