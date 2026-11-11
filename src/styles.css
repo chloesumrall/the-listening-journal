@@ -1,0 +1,10 @@
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+body {
+  font-family: 'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #efe6ea;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; }
+input, textarea { font-family: 'Quicksand', sans-serif; outline: none; }
+input::placeholder, textarea::placeholder { color: #c9aebb; }
