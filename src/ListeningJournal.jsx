@@ -3,7 +3,10 @@ import { ARTISTS } from './data';
 import {
   hasBackend, getSessionUser, onAuth, signUpEmail, signInEmail, signOutUser,
   getProfile, createProfile, loadEntries, saveEntryRow, importLocal,
+  searchUsers, sendRequest, incomingRequests, listFriends, acceptRequest, removeFriendship, friendsFeed,
 } from './db';
+
+const songMeta = (id) => SONGS.find((s) => s.id === id) || null;
 
 /*
  * The Listening Journal — reflect on songs across your favorite artists,
@@ -58,6 +61,7 @@ export default class ListeningJournal extends React.Component {
     user: null, profile: null, authReady: !hasBackend,
     authView: null, authMode: 'login', accountMenu: false,
     fEmail: '', fPassword: '', fHandle: '', fDisplay: '', authMsg: '', authBusy: false,
+    friendQuery: '', friendResults: [], requested: {}, incoming: [], friends: [], feed: [], friendsLoading: false,
   };
   saveTimers = {};
 
@@ -217,6 +221,32 @@ export default class ListeningJournal extends React.Component {
     try { window.alert(n ? ('Imported ' + n + ' local entries into your account.') : 'No local entries found to import.'); } catch (e) {}
   };
 
+  // ---- friends ----
+  goFriends = () => { this.setState({ view: 'friends', activeSong: null, accountMenu: false }); this.loadFriends(); };
+  loadFriends = async () => {
+    if (!this.state.user) return;
+    this.setState({ friendsLoading: true });
+    try {
+      const [incoming, friends, feed] = await Promise.all([
+        incomingRequests(this.state.user.id), listFriends(this.state.user.id), friendsFeed(this.state.user.id),
+      ]);
+      this.setState({ incoming, friends, feed, friendsLoading: false });
+    } catch (e) { this.setState({ friendsLoading: false }); }
+  };
+  doFriendSearch = async () => {
+    if (!this.state.user) return;
+    const results = await searchUsers(this.state.user.id, this.state.friendQuery);
+    this.setState({ friendResults: results });
+  };
+  doSendRequest = async (toId) => {
+    if (!this.state.user) return;
+    const r = await sendRequest(this.state.user.id, toId);
+    if (!r.error) this.setState((s) => ({ requested: { ...s.requested, [toId]: true } }));
+    else try { window.alert(r.error); } catch (e) {}
+  };
+  doAccept = async (fid) => { await acceptRequest(fid); this.loadFriends(); };
+  doRemoveFriend = async (fid) => { await removeFriendship(fid); this.loadFriends(); };
+
   hexOf(name) { const p = PALETTE.find((x) => x.name === name); return p ? p.hex : '#ccc'; }
   starStr(n) { return '★'.repeat(n) + '☆'.repeat(5 - n); }
 
@@ -229,15 +259,18 @@ export default class ListeningJournal extends React.Component {
     const isLibrary = S.view === 'library' && !!S.activeArtist && !S.activeSong && S.view !== 'album';
     const isAlbum = S.view === 'album' && !!S.activeAlbum && !S.activeSong;
     const isInsights = S.view === 'insights';
+    const isFriends = S.view === 'friends';
     const isEditor = S.view === 'song' && !!S.activeSong;
+    const browsing = isArtists || isLibrary || isAlbum || isEditor;
 
     const vals = {
-      goArtists: this.goArtists, goInsights: this.goInsights, backToArtist: this.backToArtist, backToAlbum: this.backToAlbum,
+      goArtists: this.goArtists, goInsights: this.goInsights, goFriends: this.goFriends, backToArtist: this.backToArtist, backToAlbum: this.backToAlbum,
       exportJournal: this.exportJournal, importJournal: this.importJournal,
       iconBtnStyle: 'font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:8px 14px; border-radius:20px; border:1.5px solid #e6c2d2; background:transparent; color:#a23a63;',
-      songsTabStyle: tab(S.view !== 'insights'),
-      insightsTabStyle: tab(S.view === 'insights'),
-      isArtists, isLibrary, isAlbum, isInsights, isEditor,
+      songsTabStyle: tab(browsing),
+      insightsTabStyle: tab(isInsights),
+      friendsTabStyle: tab(isFriends),
+      isArtists, isLibrary, isAlbum, isInsights, isFriends, isEditor,
     };
 
     const loggedCount = SONGS.filter((s) => this.touched(this.entry(s.id))).length;
@@ -420,6 +453,7 @@ export default class ListeningJournal extends React.Component {
           <div style={css('display:flex; align-items:center; gap:8px;')}>
             <button onClick={vals.goArtists} style={css(vals.songsTabStyle)}>Artists</button>
             <button onClick={vals.goInsights} style={css(vals.insightsTabStyle)}>Insights</button>
+            {this.state.user && this.state.profile && <button onClick={vals.goFriends} style={css(vals.friendsTabStyle)}>Friends</button>}
             <span style={css('width:1px; height:22px; background:#f0d7e1; margin:0 4px;')}></span>
             <button onClick={vals.exportJournal} title="Download a backup of your journal" style={css(vals.iconBtnStyle)}>⇩ Back up</button>
             <button onClick={vals.importJournal} title="Restore a journal backup file" style={css(vals.iconBtnStyle)}>⇧ Restore</button>
@@ -680,6 +714,79 @@ export default class ListeningJournal extends React.Component {
                 </div>
               )}
               {vals.noBridge && (<div style={css(vals.emptyStyle)}>Rate a few bridges to crown the best ones.</div>)}
+            </div>
+          </div>
+        )}
+
+        {vals.isFriends && (
+          <div style={css('max-width:860px; margin:0 auto; padding:34px 32px 70px;')}>
+            <div style={css('margin-bottom:6px; font-size:12px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:#c98aa4;')}>Your circle</div>
+            <h1 style={css("margin:0 0 24px; font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:40px; color:#6b2440;")}>Friends</h1>
+
+            <div style={css('background:#fffdfb; border:1.5px solid #f0d7e1; border-radius:16px; padding:18px 20px; margin-bottom:22px;')}>
+              <div style={css('font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#a23a63; margin-bottom:10px;')}>Find friends</div>
+              <div style={css('display:flex; gap:8px; flex-wrap:wrap;')}>
+                <input value={this.state.friendQuery} onChange={this.setForm('friendQuery')} onKeyDown={(e) => { if (e.key === 'Enter') this.doFriendSearch(); }} placeholder="search by username" style={css('flex:1; min-width:180px; border:1.5px solid #e6c2d2; border-radius:10px; background:#fff; font-size:15px; color:#3a2530; padding:9px 12px;')} />
+                <button onClick={this.doFriendSearch} style={css('font-family:Quicksand,sans-serif; font-size:13px; font-weight:700; cursor:pointer; padding:9px 18px; border-radius:10px; border:none; background:#a23a63; color:#fff;')}>Search</button>
+              </div>
+              {this.state.friendResults.length > 0 && (
+                <div style={css('margin-top:14px; display:flex; flex-direction:column; gap:8px;')}>
+                  {this.state.friendResults.map((u, idx) => (
+                    <div key={idx} style={css('display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 4px; border-top:' + (idx ? '1px solid #f4e2ea' : 'none') + ';')}>
+                      <div><span style={css('font-weight:700; color:#3a2530;')}>@{u.handle}</span>{u.display_name && u.display_name !== u.handle && <span style={css('color:#9a6a7c; font-size:13px; margin-left:8px;')}>{u.display_name}</span>}</div>
+                      {this.state.requested[u.id] ? <span style={css('font-size:12px; color:#9a6a7c;')}>Requested</span> : <button onClick={() => this.doSendRequest(u.id)} style={css('font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:6px 14px; border-radius:16px; border:1.5px solid #a23a63; background:transparent; color:#a23a63;')}>Add</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {this.state.incoming.length > 0 && (
+              <div style={css('margin-bottom:22px;')}>
+                <div style={css("font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:22px; color:#3a2530; margin-bottom:12px;")}>Friend requests</div>
+                <div style={css('background:#fffdfb; border:1.5px solid #f0d7e1; border-radius:16px; overflow:hidden;')}>
+                  {this.state.incoming.map((r, idx) => (
+                    <div key={idx} style={css('display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 18px; border-top:' + (idx ? '1px solid #f4e2ea' : 'none') + ';')}>
+                      <span style={css('font-weight:700; color:#3a2530;')}>@{r.from.handle}</span>
+                      <div style={css('display:flex; gap:8px;')}>
+                        <button onClick={() => this.doAccept(r.id)} style={css('font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:6px 14px; border-radius:16px; border:none; background:#a23a63; color:#fff;')}>Accept</button>
+                        <button onClick={() => this.doRemoveFriend(r.id)} style={css('font-family:Quicksand,sans-serif; font-size:12px; font-weight:700; cursor:pointer; padding:6px 12px; border-radius:16px; border:1.5px solid #e6c2d2; background:transparent; color:#a23a63;')}>Ignore</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={css('margin-bottom:26px;')}>
+              <div style={css("font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:22px; color:#3a2530; margin-bottom:12px;")}>Your friends</div>
+              {this.state.friends.length > 0 ? (
+                <div style={css('display:flex; flex-wrap:wrap; gap:8px;')}>
+                  {this.state.friends.map((f, idx) => (
+                    <span key={idx} style={css('display:inline-flex; align-items:center; gap:8px; background:#fffdfb; border:1.5px solid #f0d7e1; border-radius:16px; padding:7px 8px 7px 14px; color:#3a2530; font-weight:700; font-size:13px;')}>@{f.handle}<button onClick={() => this.doRemoveFriend(f.friendshipId)} title="Remove friend" style={css('cursor:pointer; border:none; background:#f4e2ea; color:#a23a63; border-radius:50%; width:18px; height:18px; line-height:1; font-size:12px;')}>×</button></span>
+                  ))}
+                </div>
+              ) : (<div style={css('font-size:13px; color:#b58ea0; background:#faf1f5; border:1.5px dashed #ecccd9; border-radius:14px; padding:16px 18px;')}>No friends yet — search above to add some.</div>)}
+            </div>
+
+            <div>
+              <div style={css("font-family:'Playfair Display',serif; font-style:italic; font-weight:700; font-size:22px; color:#3a2530; margin-bottom:12px;")}>Friends' recent journals</div>
+              {this.state.feed.length > 0 ? (
+                <div style={css('display:flex; flex-direction:column; gap:12px;')}>
+                  {this.state.feed.map((item, idx) => { const m = songMeta(item.songId); if (!m) return null; return (
+                    <div key={idx} style={css('background:#fffdfb; border:1.5px solid #f0d7e1; border-radius:14px; padding:14px 18px; border-left:4px solid ' + m.accent + ';')}>
+                      <div style={css('display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;')}>
+                        <div><span style={css('font-weight:700; color:#3a2530;')}>{m.title}</span> <span style={css('font-size:12px; color:#9a6a7c;')}>{m.artist} · {m.album}</span></div>
+                        <span style={css('font-size:12px; color:#a23a63; font-weight:700;')}>@{item.by.handle}</span>
+                      </div>
+                      {item.entry.overall > 0 && <div style={css('color:' + m.accent + '; font-size:14px; letter-spacing:1px; margin-top:4px;')}>{this.starStr(item.entry.overall)}</div>}
+                      {item.entry.mood && <div style={css('font-size:13px; color:#5b3a49; margin-top:6px;')}><span style={css('color:#9a6a7c;')}>Mood: </span>{item.entry.mood}</div>}
+                      {item.entry.favLine && <div style={css('font-size:14px; color:#6b2440; font-style:italic; margin-top:6px;')}>“{item.entry.favLine}”</div>}
+                      {item.entry.relates && <div style={css('font-size:13px; color:#5b3a49; margin-top:6px; line-height:1.5;')}>{item.entry.relates}</div>}
+                    </div>
+                  ); })}
+                </div>
+              ) : (<div style={css('font-size:13px; color:#b58ea0; background:#faf1f5; border:1.5px dashed #ecccd9; border-radius:14px; padding:16px 18px;')}>When your friends share entries, they'll show up here.</div>)}
             </div>
           </div>
         )}

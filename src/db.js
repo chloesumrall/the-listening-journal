@@ -88,3 +88,45 @@ export async function importLocal(userId, entries) {
   const { error } = await supabase.from('entries').upsert(rows, { onConflict: 'user_id,song_id' });
   return error ? 0 : rows.length;
 }
+
+// ---- friends ----
+export async function searchUsers(meId, q) {
+  if (!hasBackend) return [];
+  const term = (q || '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (term.length < 2) return [];
+  const { data } = await supabase.from('profiles').select('id,handle,display_name').ilike('handle', '%' + term + '%').neq('id', meId).limit(10);
+  return data || [];
+}
+export async function sendRequest(meId, toId) {
+  if (!hasBackend) return { error: 'Accounts are not configured.' };
+  const { error } = await supabase.from('friendships').insert({ requester_id: meId, addressee_id: toId, status: 'pending' });
+  if (error) return { error: (error.message || '').toLowerCase().includes('duplicate') ? 'Already requested.' : error.message };
+  return {};
+}
+export async function incomingRequests(meId) {
+  if (!hasBackend) return [];
+  const { data: fr } = await supabase.from('friendships').select('*').eq('addressee_id', meId).eq('status', 'pending');
+  if (!fr || !fr.length) return [];
+  const { data: profs } = await supabase.from('profiles').select('id,handle,display_name').in('id', fr.map((f) => f.requester_id));
+  const map = {}; (profs || []).forEach((p) => { map[p.id] = p; });
+  return fr.map((f) => ({ id: f.id, from: map[f.requester_id] || { handle: 'unknown' } }));
+}
+export async function listFriends(meId) {
+  if (!hasBackend) return [];
+  const { data: fr } = await supabase.from('friendships').select('*').or('requester_id.eq.' + meId + ',addressee_id.eq.' + meId).eq('status', 'accepted');
+  if (!fr || !fr.length) return [];
+  const otherIds = fr.map((f) => (f.requester_id === meId ? f.addressee_id : f.requester_id));
+  const { data: profs } = await supabase.from('profiles').select('id,handle,display_name').in('id', otherIds);
+  const map = {}; (profs || []).forEach((p) => { map[p.id] = p; });
+  return fr.map((f) => { const oid = f.requester_id === meId ? f.addressee_id : f.requester_id; return { friendshipId: f.id, ...(map[oid] || { id: oid, handle: 'unknown' }) }; });
+}
+export async function acceptRequest(fid) { if (hasBackend) { try { await supabase.from('friendships').update({ status: 'accepted' }).eq('id', fid); } catch (e) {} } }
+export async function removeFriendship(fid) { if (hasBackend) { try { await supabase.from('friendships').delete().eq('id', fid); } catch (e) {} } }
+export async function friendsFeed(meId) {
+  if (!hasBackend) return [];
+  const { data: rows } = await supabase.from('entries').select('*').eq('visibility', 'friends').neq('user_id', meId).order('updated_at', { ascending: false }).limit(50);
+  if (!rows || !rows.length) return [];
+  const { data: profs } = await supabase.from('profiles').select('id,handle,display_name').in('id', [...new Set(rows.map((r) => r.user_id))]);
+  const map = {}; (profs || []).forEach((p) => { map[p.id] = p; });
+  return rows.map((r) => ({ songId: r.song_id, by: map[r.user_id] || { handle: 'unknown' }, entry: fromRow(r) }));
+}
