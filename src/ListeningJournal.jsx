@@ -289,7 +289,7 @@ export default class ListeningJournal extends React.Component {
     });
     vals.artistsSubtitle = loggedCount
       ? loggedCount + ' songs reflected on so far. Pick an artist to keep going.'
-      : 'Four artists, every era, every track. Pick someone to start.';
+      : ARTISTS.length + ' artists, every era, every track. Pick someone to start.';
 
     // ---- a chosen artist's album grid ----
     if (isLibrary) {

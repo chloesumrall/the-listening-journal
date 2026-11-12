@@ -80,9 +80,60 @@ const CHELSEA_ALBUMS = [
     'Something More', 'Growing Up Is Hard', 'I Don’t Feel Alive', 'Men on the Moon', 'Your Bones', 'Hunting Season', 'If Not Yours', 'You’re All I Ever Dreamed Of', 'Loved By You', 'You Don’t Think About Me At All', 'Hold Me While It’s Ending', 'The Way You Love Me', 'No One Hates Me More', 'Hotel June', 'Stay Anything'] },
 ];
 
+const RKS_ALBUMS = [
+  { id: 'rks', name: 'RKS', accent: '#5f8f9e', tracks: [
+    'Run', 'Counting Cards', 'Wasted', 'Cold Love', 'Lady Lie', 'American Shoes', 'Cocaine Jesus', 'Bare Bones', 'Goodnight Chicago', 'All’s Well That Ends', 'The Comedown'] },
+  { id: 'htflf', name: 'How To: Friend, Love, Freefall', accent: '#c9603a', tracks: [
+    'Pacific Love', 'Mission to Mars', 'Fever Pitch', 'It’s Called: Freefall', 'Holy War', 'Matchbox', 'Moody Orange', 'Hide', 'When It Lands', 'Painkillers', 'Recktify', 'Possum Queen', 'Polite Company'] },
+  { id: 'lovehatemusicbox', name: 'Love Hate Music Box', accent: '#9e5fa8', tracks: [
+    'Peter Pan', 'Sickset', 'Finalist', 'LOL', 'Lucky', 'Meticulous', 'Hot Pink Ice Cube', 'SVO', 'Code Blue', 'Overtime (feat. Kacey Musgraves)', 'Ghoul', 'John Woo', 'Low As We Go', 'Bearwalk', 'Superstar', 'Cinderella', 'Best Man', 'Rabbit Run', 'Daddy Yankee', 'Re-entry', 'No Occasion', 'Thanks for Coming'] },
+];
+
+const KELSEA_ALBUMS = [
+  { id: 'thefirsttime', name: 'The First Time', accent: '#e0b34f', dividers: { 13: 'Bonus' }, tracks: [
+    'XO', 'Peter Pan', 'Love Me Like You Mean It', 'Square Pegs', 'The First Time', 'Looking at Stars', 'Sirens', 'Secondhand Smoke', 'Dibs', 'Stilettos', 'Yeah Boy', 'Underage',
+    'Out of the Blues', 'Boy Meets Girl'] },
+  { id: 'unapologetically', name: 'Unapologetically', accent: '#b5417f', dividers: { 13: 'Deluxe' }, tracks: [
+    'Graveyard', 'Miss Me More', 'Get Over Yourself', 'Roses', 'Machine Heart', 'In Between', 'High School', 'End of the World', 'I Hate Love Songs', 'Unapologetically', 'Music', 'Legends',
+    'Fun and Games', 'I Think I Fell in Love Today', 'Landslide', 'This Feeling'] },
+  { id: 'kelseaalbum', name: 'Kelsea', accent: '#4a90a4', tracks: [
+    'Overshare', 'Club', 'Homecoming Queen?', 'The Other Girl', 'Love Me Like a Girl', 'Love and Hate', 'Bragger', 'Hole in the Bottle', 'Half of My Hometown', 'The Way I Used To', 'Needy', 'A Country Song', 'LA'] },
+  { id: 'subjecttochange', name: 'Subject to Change', accent: '#7a9e5f', tracks: [
+    'Subject to Change', 'The Little Things', 'I Can’t Help Myself', 'If You Go Down (I’m Goin’ Down Too)', 'Love Is a Cowboy', 'Muscle Memory', 'I Guess They Call It Fallin’', 'Weather', 'Universe', 'Walk in the Park', 'Heartfirst', 'You’re Drunk, Go Home', 'Doin’ My Best', 'Marilyn', 'What I Have'] },
+  { id: 'patterns', name: 'Patterns', accent: '#d4607e', dividers: { 16: 'Deluxe' }, tracks: [
+    'Patterns', 'Sorry Mom', 'Baggage', 'First Rodeo', 'Nothing Really Matters', 'How Much Do You Love Me', 'Two Things', 'We Broke Up', 'Wait!', 'Beg for Your Love', 'Deep', 'Cowboys Cry Too', 'I Would, Would You', 'This Time Last Year', 'Did You Make It Home?',
+    'To the Men That Love Women After Heartbreak', 'Future Tripping', 'Put It to Bed', 'Cut Me Up', 'Hindsight Is Happiness'] },
+];
+
+const GIRLINRED_ALBUMS = [
+  { id: 'ificouldmakeitgoquiet', name: 'If I Could Make It Go Quiet', accent: '#c23b3b', tracks: [
+    'Serotonin', 'Did You Come?', 'Body and Mind', 'Hornylovesickmess', 'Midnight Love', 'You Stupid Bitch', 'Rue', 'Apartment 402', '.', 'I’ll Call You Mine', 'It Would Feel Like This'] },
+  { id: 'imdoingitagainbaby', name: 'I’m Doing It Again Baby!', accent: '#d98f3f', tracks: [
+    'I’m Back', 'Doing It Again Baby', 'Too Much', 'Phantom Pain', 'You Need Me Now?', 'A Night to Remember', 'Pick Me', 'Ugly Side', 'New Love', '★★★★★'] },
+];
+
+const TYLER_ALBUMS = [
+  { id: 'purgatory', name: 'Purgatory', accent: '#8a6d3b', tracks: [
+    'I Swear (To God)', 'Feathered Indians', 'Tattoos', 'Born Again', 'Whitehouse Road', 'Banded Clovis', 'Purgatory', 'Honky Tonk Flame', 'Universal Sound', 'Lady May'] },
+  { id: 'countrysquire', name: 'Country Squire', accent: '#6b8e5a', tracks: [
+    'Country Squire', 'Bus Route', 'Creeker', 'Gemini', 'House Fire', 'Ever Lovin’ Hand', 'Peace of Mind', 'All Your’n', 'Matthew'] },
+  { id: 'longviolenthistory', name: 'Long Violent History', accent: '#7a6a3f', tracks: [
+    'Send In the Clowns', 'Zollie’s Retreat', 'Squirrel Hunter', 'Sludge River Stomp', 'Midnight on the Water', 'Camp Chase', 'Jenny Lynn', 'Bonaparte’s Retreat', 'Long Violent History'] },
+  { id: 'hounds', name: 'Can I Take My Hounds to Heaven?', accent: '#a5552d', tracks: [
+    'The Old Country Church', 'Can I Take My Hounds to Heaven?', 'Two Coats', 'Purgatory', 'The Way of the Triune God', 'Angel Band', 'Jubilee', 'Heart You’ve Been Tendin’'] },
+  { id: 'rustininthrain', name: 'Rustin’ in the Rain', accent: '#5a7d8c', tracks: [
+    'Rustin’ in the Rain', 'Phone Calls and Emails', 'Luke 2:8–10', 'Help Me Make It Through the Night', 'Percheron Mules', 'In Your Love', 'Space and Time'] },
+  { id: 'snipehunter', name: 'Snipe Hunter', accent: '#9e6b3a', tracks: [
+    'Eatin’ Big Time', 'Cuttin’ Teeth', 'Oneida', 'Getting to the Bottom', 'Bitin’ List', 'Nose on the Grindstone', 'Watch Out', 'Down Under', 'Poachers', 'Snipe Hunt', 'Tirtha Yatra', 'Tomcat and a Dandy', 'Dirty Ought Trill'] },
+];
+
 export const ARTISTS = [
   { id: 'taylor', name: 'Taylor Swift', accent: '#a23a63', blurb: 'Pop to folklore', albums: TAYLOR_ALBUMS },
   { id: 'noah', name: 'Noah Kahan', accent: '#3f6b4f', blurb: 'Folk-pop, Vermont', albums: NOAH_ALBUMS },
   { id: 'gracie', name: 'Gracie Abrams', accent: '#8a7fb0', blurb: 'Bedroom confessional', albums: GRACIE_ALBUMS },
   { id: 'chelsea', name: 'Chelsea Cutler', accent: '#3f7ba0', blurb: 'Indie-pop', albums: CHELSEA_ALBUMS },
+  { id: 'rks', name: 'Rainbow Kitten Surprise', accent: '#9e5fa8', blurb: 'Indie rock', albums: RKS_ALBUMS },
+  { id: 'kelsea', name: 'Kelsea Ballerini', accent: '#d98f3f', blurb: 'Country pop', albums: KELSEA_ALBUMS },
+  { id: 'girlinred', name: 'girl in red', accent: '#c23b3b', blurb: 'Bedroom pop', albums: GIRLINRED_ALBUMS },
+  { id: 'tyler', name: 'Tyler Childers', accent: '#8a6d3b', blurb: 'Appalachian country', albums: TYLER_ALBUMS },
 ];
